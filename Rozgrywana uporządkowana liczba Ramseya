@@ -9,29 +9,32 @@
 #include <unordered_set>
 #include <vector>
 using namespace std;
+
 constexpr int
     V_MAX = 24,
-    V_MAX_SQ =
-        V_MAX * V_MAX; /// V_MAX=2n, bo jeĹ›li mamy n ruchĂłw, to zajmuje max 2
-                       /// wierzchoĹ‚ki; V_MAX_SQ=V_MAX*V_MAX - wielkoĹ›Ä‡ macierzy.
+    V_MAX_SQ = V_MAX * V_MAX; 
+// V_MAX = 2n, bo przy n ruchach może być maksymalnie 2n wierzchołków
+// V_MAX_SQ = rozmiar macierzy sąsiedztwa
+
 typedef bitset<V_MAX_SQ> matrix;
 int K, N;
+
 struct interval {
   short l, r;
   interval() {
-    l = -10; ///-10 oznacza, ĹĽe nie wiemy przy ilu ruchach jeszcze wygrywa
-             ///malarz.
-    r = 10000;
+    l = -10;   // -10 oznacza nieznaną dolną granicę zwycięstwa malarza
+    r = 10000; // początkowa górna granica ruchów
   }
 };
-unordered_map<matrix, interval>
-    ANAL_POS; /// nieuporzÄ…dkowany sĹ‚ownik, ktĂłry przechowuje wszystkie moĹĽliwe
-              /// pozycje w grze.
+
+// słownik zapamiętujących wcześniej analizowane pozycje
+unordered_map<matrix, interval> ANAL_POS; 
 
 #define ST first
 #define ND second
 #define MP make_pair
 
+// maska elementów poniżej głównej przekątnej (czerwone krawędzie)
 matrix strictlyLowerTriangularMask() {
   matrix low;
   for (int i = 1; i < V_MAX; ++i)
@@ -40,6 +43,8 @@ matrix strictlyLowerTriangularMask() {
   return low;
 }
 const matrix LOWER_MASK = strictlyLowerTriangularMask();
+
+// maska elementów powyżej głównej przekątnej (niebieskie krawędzie)
 matrix strictlyUpperTriangularMask() {
   matrix upp;
   for (int i = 0; i < V_MAX; ++i)
@@ -48,95 +53,103 @@ matrix strictlyUpperTriangularMask() {
   return upp;
 }
 const matrix UPPER_MASK = strictlyUpperTriangularMask();
+
+// maski dla każdego wiersza macierzy
 const array<matrix, V_MAX> rowMasks() {
-  /// masks for each row of a matrix
   array<matrix, V_MAX> ver;
-  int i = 0;
-  for (i = 0; i < V_MAX; ++i)
+  ver[0].reset();
+  for (int i = 0; i < V_MAX; ++i)
     ver[0][i] = 1;
-  for (i = 1; i < V_MAX; ++i)
+  for (int i = 1; i < V_MAX; ++i)
     ver[i] = ver[i - 1] << V_MAX;
   return ver;
 }
 const array<matrix, V_MAX> ROW_MASKS = rowMasks();
 
+// maski dla każdej kolumny macierzy
 const array<matrix, V_MAX> columnMasks() {
-  /// masks for each column of a matrix
   array<matrix, V_MAX> ver;
-  int i = 0;
-  for (i = 0; i < V_MAX; ++i)
+  ver[0].reset();
+  for (int i = 0; i < V_MAX; ++i)
     ver[0][i * V_MAX] = 1;
-  for (i = 1; i < V_MAX; ++i)
+  for (int i = 1; i < V_MAX; ++i)
     ver[i] = ver[i - 1] << 1;
   return ver;
 }
 const array<matrix, V_MAX> COLUMN_MASKS = columnMasks();
 
+// maski sumowane wierszy/kolejnych kolumn
 const array<matrix, V_MAX + 1> sumMasks(array<matrix, V_MAX> masks) {
-  /// masks for first k rows of a matrix
   array<matrix, V_MAX + 1> ver;
-  int i = 0;
-  for (i = 0; i < V_MAX; ++i)
+  ver[0].reset();
+  for (int i = 0; i < V_MAX; ++i)
     ver[i + 1] = ver[i] | masks[i];
   return ver;
 }
-const array<matrix, V_MAX + 1> S_ROW_MASKS = sumMasks(ROW_MASKS),
+const array<matrix, V_MAX + 1> S_ROW_MASKS    = sumMasks(ROW_MASKS),
                                S_COLUMN_MASKS = sumMasks(COLUMN_MASKS);
 
 struct Graph {
-  matrix m;  /// adjacency matrix
-  int e = 0; /// number of edges
-  int v = 0; /// number of vertices
+  matrix m;   // macierz sąsiedztwa
+  int e = 0;  // liczba krawędzi
+  int v = 0;  // liczba wierzchołków
+
+  // dodaje niebieską krawędź (v1<v2) lub czerwoną (v1>v2)
   void addEdge(int v1, int v2) {
-    /// if v1<v2, edge is blue, otherwise red
     m[v1 * V_MAX + v2] = 1;
     ++e;
   }
   void removeEdge(int v1, int v2) {
-    /// if v1<v2, edge is blue, otherwise red
     m[v1 * V_MAX + v2] = 0;
     --e;
   }
+
+  // wstawia nowy wierzchołek w pozycji w
   void addVertex(int w) {
+    // dodanie kolumny
     m = (m & S_COLUMN_MASKS[w]) |
-        ((m << 1) & (~S_COLUMN_MASKS[w + 1])); /// add a column
+        ((m << 1) & (~S_COLUMN_MASKS[w + 1])); 
+    // dodanie wiersza
     m = (m & S_ROW_MASKS[w]) |
-        ((m << V_MAX) & (~S_ROW_MASKS[w + 1])); /// add a row
+        ((m << V_MAX) & (~S_ROW_MASKS[w + 1])); 
     ++v;
   }
+  // usuwa wierzchołek w pozycji w
   void removeVertex(int w) {
+    // usunięcie kolumny
     m = (m & S_COLUMN_MASKS[w]) |
-        ((m >> 1) & (~S_COLUMN_MASKS[w])); /// delete a column
+        ((m >> 1) & (~S_COLUMN_MASKS[w])); 
+    // usunięcie wiersza
     m = (m & S_ROW_MASKS[w]) |
-        ((m >> V_MAX) & (~S_ROW_MASKS[w])); /// delete a row
+        ((m >> V_MAX) & (~S_ROW_MASKS[w])); 
     --v;
   }
   void clear() {
     m.reset();
-    v = 0;
-    e = 0;
+    v = e = 0;
   }
-  int matching() { /// finds the size of the biggest red matching
+
+  // znajduje rozmiar największego uporządkowanego czerwonego skojarzenia
+  int matching() {
     auto g = m & LOWER_MASK;
     int i = 0, n = 0;
-    while (1) {
+    while (true) {
       i = g._Find_next(i * V_MAX - 1) / V_MAX;
-      if (i >= v)
-        return n;
+      if (i >= v) return n;
       ++n;
       g &= ~S_COLUMN_MASKS[i + 1];
     }
   }
-  int path() { /// finds the number of vertices in the longest blue monotonic
-               /// path
+
+  // znajduje długość najdłuższej niebieskiej ścieżki
+  int path() {
     auto g = m & UPPER_MASK;
     array<int, V_MAX> l{};
     int x, y, mx = 0;
-#define FOR_BS(i, bset, beg, end)                                              \
-  for (int i = (bset)._Find_next((beg)-1); i < end; i = (bset)._Find_next(i))
+    #define FOR_BS(i, bset, beg, end) \
+      for (int i = (bset)._Find_next((beg)-1); i < end; i = (bset)._Find_next(i))
     FOR_BS(i, g, 0, V_MAX_SQ) {
-      x = i / V_MAX;
-      y = i % V_MAX;
+      x = i / V_MAX; y = i % V_MAX;
       if (l[x] + 1 > l[y]) {
         l[y] = l[x] + 1;
         mx = max(mx, l[x] + 1);
@@ -144,15 +157,16 @@ struct Graph {
     }
     return mx + 1;
   }
+
+  // znajduje liczbę krawędzi w największym grafie łączącym monotoniczne ścieżki
   int paths() {
     auto g = m & UPPER_MASK;
     array<int, V_MAX> l{};
     int x, y, j = 1, mx = 0;
-#define FOR_BS(i, bset, beg, end)                                              \
-  for (int i = (bset)._Find_next((beg)-1); i < end; i = (bset)._Find_next(i))
+    #define FOR_BS(i, bset, beg, end) \
+      for (int i = (bset)._Find_next((beg)-1); i < end; i = (bset)._Find_next(i))
     FOR_BS(i, g, 0, V_MAX_SQ) {
-      x = i / V_MAX;
-      y = i % V_MAX;
+      x = i / V_MAX; y = i % V_MAX;
       for (; x >= j; ++j)
         l[j] = max(l[j], l[j - 1]);
       if (l[x] + 1 > l[y]) {
@@ -162,111 +176,97 @@ struct Graph {
     }
     return mx + 1;
   }
-  bool redInside(int i,
-                 int j) { /// checks if there is a red edge in [i,j] interval
-    return (m & LOWER_MASK & S_ROW_MASKS[j + 1] & ~S_ROW_MASKS[i] &
-            S_COLUMN_MASKS[j + 1] & ~S_COLUMN_MASKS[i])
-        .any();
+
+  // sprawdza, czy istnieje czerwona krawędź w przedziale [i,j]
+  bool redInside(int i, int j) {
+    return (m & LOWER_MASK & S_ROW_MASKS[j+1] & ~S_ROW_MASKS[i]
+               & S_COLUMN_MASKS[j+1] & ~S_COLUMN_MASKS[i]).any();
   }
+
+  // stopień czerwony wierzchołka i
   int redDegree(int i) {
     return (m & LOWER_MASK & (ROW_MASKS[i] | COLUMN_MASKS[i])).count();
   }
 };
 
+// symuluje i wypisuje aktualny graf oraz wyniki matching() i path()
 void print(Graph G) {
-#define FOR_BS(i, bset, beg, end)                                              \
-  for (int i = (bset)._Find_next((beg)-1); i < end; i = (bset)._Find_next(i))
+  #define FOR_BS(i, bset, beg, end) \
+    for (int i = (bset)._Find_next((beg)-1); i < end; i = (bset)._Find_next(i))
   FOR_BS(i, G.m, 0, V_MAX_SQ)
-  printf("%d %d\n", i / V_MAX, i % V_MAX);
+    printf("%d %d\n", i / V_MAX, i % V_MAX);
   printf(">>%d %d\n", G.matching(), G.path());
 }
-void print(matrix m) {
-  for (int i = 0; i < V_MAX_SQ; ++i)
-    printf(i % V_MAX == V_MAX - 1 ? "%d\n" : "%d", (int)m[i]);
-  printf("\n");
-}
 
-bool colour(Graph G, int m, int i, int j, bool x, bool y);
+// główna funkcja rekurencyjna Konstruktora
 bool construct(Graph G, int m) {
-  /// returns 1 iff builder has a winning move
-  // print(G);
   auto &x = ANAL_POS[G.m];
-  if (x.l >= m)
-    return 0;
-  if (x.r <= m)
-    return 1;
-  int i, j, matching = G.matching(), paths = G.paths();
+  if (x.l >= m) return false; // już za późno dla konstruktora
+  if (x.r <= m) return true;  // już wiadomo, że wygra
+
+  int matching = G.matching(), paths = G.paths();
   if (matching >= K || G.path() >= N) {
     x.r = 0;
-    return 1;
+    return true;
   }
   if (K - matching + max(N - paths - 1, 0) > m) {
     x.l = K - matching + max(N - paths - 1, 0) - 1;
-    return 0;
+    return false;
   }
   if (m == 0) {
     x.l = m;
-    return 0;
+    return false;
   }
-  for (i = 0; i <= G.v; ++i)
-    for (j = i; j <= G.v; ++j) {
-      if (i != j && j < G.v) {
-        if (colour(G, m, i, j, 0, 0)) {
-          x.r = m;
-          return 1;
-        }
+
+  // sprawdzamy wszystkie możliwe ruchy
+  for (int i = 0; i <= G.v; ++i)
+    for (int j = i; j <= G.v; ++j) {
+      // różne warianty wstawienia krawędzi i ewentualnych wierzchołków
+      if (i != j && j < G.v && colour(G, m, i, j, 0, 0)) {
+        x.r = m; return true;
       }
-      if (j < G.v) {
-        if (colour(G, m, i, j, 1, 0)) {
-          x.r = m;
-          return 1;
-        }
+      if (j < G.v && colour(G, m, i, j, 1, 0)) {
+        x.r = m; return true;
       }
-      if (i < G.v) {
-        if (colour(G, m, i, j, 0, 1)) {
-          x.r = m;
-          return 1;
-        }
+      if (i < G.v && colour(G, m, i, j, 0, 1)) {
+        x.r = m; return true;
       }
       if (colour(G, m, i, j, 1, 1)) {
-        x.r = m;
-        return 1;
+        x.r = m; return true;
       }
     }
+
   x.l = m;
-  return 0;
+  return false;
 }
+
+// główna funkcja Malarza
 bool colour(Graph G, int m, int i, int j, bool x, bool y) {
-  /// returns 0 iff painter has a winning move
-  if (G.v + x + y > V_MAX)
-    return 0;
-  if (x) {
-    G.addVertex(i);
-    ++j;
-  }
-  if (y)
-    G.addVertex(j);
-  if (G.redInside(i, j))
-  /// if Builder played a stupid move, call it a win for Painter
-    return 0;
+  if (G.v + x + y > V_MAX) return false;
+
+  if (x) { G.addVertex(i); ++j; }
+  if (y) { G.addVertex(j); }
+
+  // kara za nierozważny ruch: natychmiastowa wygrana Malarza
+  if (G.redInside(i, j)) return false;
+
   if (G.redDegree(i) == 0 || G.redDegree(j) == 0) {
     G.addEdge(i, j);
-    if (!construct(G, m - 1))
-      return 0;
+    if (!construct(G, m - 1)) return false;
     G.removeEdge(i, j);
+
     G.addEdge(j, i);
-    if (!construct(G, m - 1))
-      return 0;
+    if (!construct(G, m - 1)) return false;
   } else {
     G.addEdge(j, i);
-    if (!construct(G, m - 1))
-      return 0;
+    if (!construct(G, m - 1)) return false;
     G.removeEdge(j, i);
+
     G.addEdge(i, j);
-    if (!construct(G, m - 1))
-      return 0;
+    if (!construct(G, m - 1)) return false;
   }
-  return 1;
+
+  return true;
 }
 
 int main() {
@@ -274,11 +274,11 @@ int main() {
   K = 6;
   N = 5;
 
-  for (int i = 0; i < 13; ++i){
-    if(construct(G, i))
-      printf("r_o(M_%d,P_%d)<=%d\n",K,N,i);
+  for (int i = 0; i < 13; ++i) {
+    if (construct(G, i))
+      printf("r_o(M_%d,P_%d)<=%d\n", K, N, i);
     else
-      printf("r_o(M_%d,P_%d)>%d\n",K,N,i);
-    printf("Positions analyzed so far: %d\n", (int)ANAL_POS.size());
+      printf("r_o(M_%d,P_%d)>%d\n", K, N, i);
+    printf("Analizowanych pozycji: %d\n", (int)ANAL_POS.size());
   }
 }
